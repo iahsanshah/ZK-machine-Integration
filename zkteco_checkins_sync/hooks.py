@@ -219,8 +219,14 @@ def get_scheduler_events():
         frappe.log_error(f"Error in ZKTeco dynamic scheduler: {str(e)}", "ZKTeco Scheduler Error")
         return {}
 
-# Apply dynamic scheduler
-scheduler_events = get_scheduler_events()
+# # Apply dynamic scheduler
+# scheduler_events = get_scheduler_events()
+# Apply dynamic scheduler only after installation
+try:
+    scheduler_events = get_scheduler_events()
+except Exception:
+    scheduler_events = {}
+
 
 # Fallback static scheduler for basic functionality
 if not scheduler_events:
