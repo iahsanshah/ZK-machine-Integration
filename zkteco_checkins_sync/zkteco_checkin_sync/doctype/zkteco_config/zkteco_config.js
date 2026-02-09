@@ -4,24 +4,41 @@
 frappe.ui.form.on("ZKTeco Config", {
     refresh(frm) {
         // Add custom buttons
-        if (frm.doc.enable_sync && (frm.doc.token || (frm.doc.server_port || '').toString() === '4370')) {
-            frm.add_custom_button(__('Manual Sync'), function() {
-                manual_sync(frm);
-            }, __('Actions'));
+        if (frm.doc.enable_sync) {
+            // Check if we have devices configured (either primary or multi-IP)
+            const has_devices = (frm.doc.multi_ip && frm.doc.multi_ip.length > 0) ||
+                (frm.doc.server_ip && frm.doc.server_port &&
+                    ((frm.doc.token && frm.doc.token !== '') || (frm.doc.server_port === '4370')));
 
-            frm.add_custom_button(__('Sync Status'), function() {
-                show_sync_status(frm);
-            }, __('Actions'));
+            if (has_devices) {
+                frm.add_custom_button(__('Manual Sync'), function () {
+                    manual_sync(frm);
+                }, __('Actions'));
+
+                frm.add_custom_button(__('Sync Status'), function () {
+                    show_sync_status(frm);
+                }, __('Actions'));
+            }
         }
 
         // Add maintenance buttons
-        frm.add_custom_button(__('🔧 Fix IN/OUT Types'), function() {
+        frm.add_custom_button(__('🔧 Fix IN/OUT Types'), function () {
             fix_checkin_types(frm);
         }, __('Maintenance'));
 
-        frm.add_custom_button(__('🗑️ Remove Duplicates'), function() {
+        frm.add_custom_button(__('🗑️ Remove Duplicates'), function () {
             remove_duplicates(frm);
         }, __('Maintenance'));
+
+        // Add button to check all devices status
+        frm.add_custom_button(__('🔍 Check All Devices'), function () {
+            check_all_devices_status(frm);
+        }, __('Actions'));
+
+        // Add button to sync all devices
+        frm.add_custom_button(__('🔄 Sync All Devices'), function () {
+            sync_all_devices(frm);
+        }, __('Actions'));
 
         // Show sync status indicator
         if (frm.doc.enable_sync) {
@@ -39,17 +56,27 @@ frappe.ui.form.on("ZKTeco Config", {
     },
 
     check_device_status(frm) {
+        // If multi-IP is configured, use the first device
+        let server_ip = frm.doc.server_ip;
+        let server_port = frm.doc.server_port;
+
+        if (frm.doc.multi_ip && frm.doc.multi_ip.length > 0) {
+            const first_device = frm.doc.multi_ip[0];
+            server_ip = first_device.ip;
+            server_port = first_device.port;
+        }
+
         frappe.call({
             method: "zkteco_checkins_sync.zkteco_checkin_sync.doctype.zkteco_config.zkteco_config.check_device_status",
             args: {
-                server_ip: frm.doc.server_ip,
-                server_port: frm.doc.server_port,
+                server_ip: server_ip,
+                server_port: server_port,
             },
             freeze: true,
             freeze_message: __("Checking device connection...")
         }).then((r) => {
             const result = r.message || {};
-            
+
             if (result.connected) {
                 frappe.msgprint({
                     title: __("✅ Device Connected"),
@@ -107,7 +134,7 @@ frappe.ui.form.on("ZKTeco Config", {
                     message: __(`✅ Connected successfully! Found ${msg.total_transactions || 0} transactions today.`),
                     indicator: "green"
                 });
-                
+
                 // Show detailed transaction preview
                 if (msg.transactions_preview && msg.transactions_preview.length > 0) {
                     show_transaction_preview(msg.transactions_preview, msg.total_transactions);
@@ -145,13 +172,27 @@ frappe.ui.form.on("ZKTeco Config", {
     },
 
     register_api_token(frm) {
+        // If multi-IP is configured, use the first device credentials
+        let server_ip = frm.doc.server_ip;
+        let server_port = frm.doc.server_port;
+        let username = frm.doc.username;
+        let password = frm.doc.password;
+
+        if (frm.doc.multi_ip && frm.doc.multi_ip.length > 0) {
+            const first_device = frm.doc.multi_ip[0];
+            server_ip = first_device.ip;
+            server_port = first_device.port;
+            username = first_device.user;
+            password = first_device.password;
+        }
+
         frappe.call({
             method: "zkteco_checkins_sync.zkteco_checkin_sync.doctype.zkteco_config.zkteco_config.register_api_token",
             args: {
-                server_ip: frm.doc.server_ip,
-                server_port: frm.doc.server_port,
-                username: frm.doc.username,
-                password: frm.doc.password,
+                server_ip: server_ip,
+                server_port: server_port,
+                username: username,
+                password: password,
             },
             freeze: true,
             freeze_message: __("Registering token...")
@@ -159,9 +200,9 @@ frappe.ui.form.on("ZKTeco Config", {
             if (r.message && r.message.token) {
                 frm.set_value("token", r.message.token);
                 frm.save().then(() => {
-                    frappe.show_alert({ 
-                        message: __("✅ API token registered and saved successfully!"), 
-                        indicator: "green" 
+                    frappe.show_alert({
+                        message: __("✅ API token registered and saved successfully!"),
+                        indicator: "green"
                     });
                 });
             } else if (r.message && r.message.device_mode) {
@@ -185,7 +226,7 @@ function show_transaction_preview(transactions, total_count) {
                     <strong>📊 Found ${total_count} transactions today</strong><br>
                     <small>Showing latest ${transactions.length} transactions:</small>
                 </div>`;
-    
+
     html += `<div style="max-height: 400px; overflow-y: auto;">
              <table class="table table-bordered table-striped" style="font-size: 12px;">
                 <thead>
@@ -199,14 +240,14 @@ function show_transaction_preview(transactions, total_count) {
                     </tr>
                 </thead>
                 <tbody>`;
-    
+
     transactions.forEach(txn => {
-        const statusBadge = txn.erpnext_employee ? 
-            '<span style="color: green;">✅ Mapped</span>' : 
+        const statusBadge = txn.erpnext_employee ?
+            '<span style="color: green;">✅ Mapped</span>' :
             '<span style="color: orange;">⚠️ Not Found</span>';
-        
+
         const logTypeColor = txn.log_type === 'IN' ? 'blue' : 'red';
-        
+
         html += `<tr>
                     <td>${txn.id || 'N/A'}</td>
                     <td>
@@ -219,16 +260,16 @@ function show_transaction_preview(transactions, total_count) {
                     <td>${statusBadge}</td>
                 </tr>`;
     });
-    
+
     html += `</tbody></table></div>`;
-    
+
     html += `<div style="margin-top: 15px; padding: 10px; background-color: #e7f3ff; border-radius: 4px;">
                 <small><strong>💡 Tips:</strong><br>
                 • Make sure employee codes in ERPNext match the emp_code from ZKTeco<br>
                 • Employees with "Not Found" status won't be synced to ERPNext<br>
                 • Enable sync and set frequency to automatically import these transactions</small>
              </div>`;
-    
+
     const d = new frappe.ui.Dialog({
         title: __('ZKTeco Transactions Preview'),
         fields: [{
@@ -238,7 +279,7 @@ function show_transaction_preview(transactions, total_count) {
         }],
         size: 'large'
     });
-    
+
     d.show();
 }
 
@@ -253,6 +294,9 @@ function manual_sync(frm) {
                 message: __('✅ Manual sync completed successfully!'),
                 indicator: 'green'
             });
+
+            // Refresh the form to update sync stats
+            frm.refresh();
         } else {
             frappe.show_alert({
                 message: __(`❌ Sync failed: ${r.message.message || 'Unknown error'}`),
@@ -262,19 +306,118 @@ function manual_sync(frm) {
     });
 }
 
+function check_all_devices_status(frm) {
+    frappe.call({
+        method: "zkteco_checkins_sync.zkteco_checkin_sync.doctype.zkteco_config.zkteco_config.check_all_devices_status",
+        freeze: true,
+        freeze_message: __("Checking all device statuses...")
+    }).then((r) => {
+        const results = r.message || [];
+
+        if (results.length === 0) {
+            frappe.msgprint({
+                title: __('No Devices Configured'),
+                message: __('Please configure at least one device in the Multiple Server IPs section.'),
+                indicator: 'orange'
+            });
+            return;
+        }
+
+        let html = '<div style="padding: 10px;">';
+        html += '<table class="table table-bordered">';
+        html += '<thead><tr><th>Device Name</th><th>IP</th><th>Port</th><th>Status</th><th>Response Time</th><th>Error</th></tr></thead>';
+        html += '<tbody>';
+
+        results.forEach(result => {
+            const status = result.connected ? '✅ Connected' : '❌ Disconnected';
+            const statusClass = result.connected ? 'text-success' : 'text-danger';
+
+            html += `<tr>
+                        <td>${result.device_name || 'N/A'}</td>
+                        <td>${result.ip || 'N/A'}</td>
+                        <td>${result.port || 'N/A'}</td>
+                        <td class="${statusClass}">${status}</td>
+                        <td>${result.response_time ? result.response_time + ' ms' : 'N/A'}</td>
+                        <td>${result.error || 'N/A'}</td>
+                     </tr>`;
+        });
+
+        html += '</tbody></table></div>';
+
+        frappe.msgprint({
+            title: __('All Devices Status'),
+            message: html,
+            indicator: 'blue'
+        });
+    });
+}
+
+function sync_all_devices(frm) {
+    frappe.confirm(
+        __('This will sync all configured devices. Continue?'),
+        function () {
+            frappe.call({
+                method: "zkteco_checkins_sync.zkteco_checkin_sync.doctype.zkteco_config.zkteco_config.sync_all_devices",
+                freeze: true,
+                freeze_message: __("Syncing all devices...")
+            }).then((r) => {
+                const results = r.message || [];
+
+                if (results.length === 0) {
+                    frappe.msgprint({
+                        title: __('No Devices Configured'),
+                        message: __('Please configure at least one device in the Multiple Server IPs section.'),
+                        indicator: 'orange'
+                    });
+                    return;
+                }
+
+                let html = '<div style="padding: 10px;">';
+                html += '<table class="table table-bordered">';
+                html += '<thead><tr><th>Device Name</th><th>Status</th><th>Records Created</th><th>Error</th></tr></thead>';
+                html += '<tbody>';
+
+                results.forEach(result => {
+                    const status = result.success ? '✅ Success' : '❌ Failed';
+                    const statusClass = result.success ? 'text-success' : 'text-danger';
+
+                    html += `<tr>
+                                <td>${result.device_name || 'N/A'}</td>
+                                <td class="${statusClass}">${status}</td>
+                                <td>${result.created || 0}</td>
+                                <td>${result.error || 'N/A'}</td>
+                             </tr>`;
+                });
+
+                html += '</tbody></table></div>';
+
+                frappe.msgprint({
+                    title: __('Sync All Devices Result'),
+                    message: html,
+                    indicator: results.some(r => !r.success) ? 'orange' : 'green'
+                });
+
+                // Refresh the form to update sync stats
+                frm.refresh();
+            });
+        }
+    );
+}
+
 function show_sync_status(frm) {
     frappe.call({
         method: "zkteco_checkins_sync.zkteco_checkin_sync.doctype.zkteco_config.zkteco_config.get_sync_status"
     }).then((r) => {
         const status = r.message || {};
-        
+
         let html = '<div style="padding: 10px;">';
-        
+
         if (status.error) {
             html += `<div style="color: red;">❌ Error: ${status.error}</div>`;
         } else {
             html += `<table class="table table-bordered">
                         <tr><td><strong>Sync Enabled:</strong></td><td>${status.enabled ? '✅ Yes' : '❌ No'}</td></tr>
+                        <tr><td><strong>Sync Method:</strong></td><td>${status.sync_method || 'Individual'}</td></tr>
                         <tr><td><strong>Sync Frequency:</strong></td><td>Every ${status.sync_frequency || 'N/A'} seconds</td></tr>
                         <tr><td><strong>Last Sync:</strong></td><td>${status.last_sync || 'Never'}</td></tr>
                         <tr><td><strong>Recent Check-ins (24h):</strong></td><td>${status.recent_checkins_24h || 0}</td></tr>
@@ -282,11 +425,32 @@ function show_sync_status(frm) {
                         <tr><td><strong>Check-ins OUT (24h):</strong></td><td>${status.checkins_out_24h || 0}</td></tr>
                         <tr><td><strong>Server Configured:</strong></td><td>${status.server_configured ? '✅ Yes' : '❌ No'}</td></tr>
                         <tr><td><strong>Token Configured:</strong></td><td>${status.token_configured ? '✅ Yes' : '❌ No'}</td></tr>
+                        <tr><td><strong>Multi-IP Configured:</strong></td><td>${status.multi_ip_configured ? '✅ Yes' : '❌ No'}</td></tr>
                      </table>`;
+
+            // Show device-specific stats if multi-IP is configured
+            if (status.device_stats && status.device_stats.length > 0) {
+                html += '<h5 style="margin-top: 20px;">Device-Specific Stats:</h5>';
+                html += '<table class="table table-bordered">';
+                html += '<thead><tr><th>Device Name</th><th>IP</th><th>Port</th><th>Last Sync</th><th>Total Records</th></tr></thead>';
+                html += '<tbody>';
+
+                status.device_stats.forEach(device => {
+                    html += `<tr>
+                                <td>${device.device_name || 'N/A'}</td>
+                                <td>${device.ip || 'N/A'}</td>
+                                <td>${device.port || 'N/A'}</td>
+                                <td>${device.last_sync || 'Never'}</td>
+                                <td>${device.total_records_synced || 0}</td>
+                             </tr>`;
+                });
+
+                html += '</tbody></table>';
+            }
         }
-        
+
         html += '</div>';
-        
+
         frappe.msgprint({
             title: __('ZKTeco Sync Status'),
             message: html,
@@ -299,25 +463,43 @@ function show_sync_indicator(frm) {
     const sync_frequency = frm.doc.seconds;
     const token_configured = frm.doc.token ? true : false;
     const device_mode = (frm.doc.server_port || '').toString() === '4370';
+    const multi_ip_configured = frm.doc.multi_ip && frm.doc.multi_ip.length > 0;
 
     let indicator_color = 'red';
     let indicator_text = 'Sync Disabled';
 
-    if (frm.doc.enable_sync && (token_configured || device_mode)) {
-        indicator_color = 'green';
-        indicator_text = device_mode ? 'Device Mode (4370)' : `Sync Active (${sync_frequency}s)`;
-    } else if (frm.doc.enable_sync) {
-        indicator_color = 'orange';
-        indicator_text = 'Sync Enabled (Token Missing)';
+    if (frm.doc.enable_sync) {
+        // Check if we have devices configured
+        const has_devices = multi_ip_configured ||
+            (frm.doc.server_ip && frm.doc.server_port && (token_configured || device_mode));
+
+        if (has_devices) {
+            if (multi_ip_configured) {
+                indicator_color = 'green';
+                indicator_text = `Multi-IP Sync Active (${sync_frequency}s)`;
+            } else if (device_mode) {
+                indicator_color = 'green';
+                indicator_text = 'Device Mode (4370)';
+            } else if (token_configured) {
+                indicator_color = 'green';
+                indicator_text = `API Sync Active (${sync_frequency}s)`;
+            } else {
+                indicator_color = 'orange';
+                indicator_text = 'Sync Enabled (Token Missing)';
+            }
+        } else {
+            indicator_color = 'orange';
+            indicator_text = 'Sync Enabled (No Devices Configured)';
+        }
     }
 
     frm.dashboard.add_indicator(indicator_text, indicator_color);
 }
 
-function fix_checkin_types() {
+function fix_checkin_types(frm) {
     frappe.confirm(
         __('This will fix all existing Employee Checkin records with incorrect IN/OUT log types. Continue?'),
-        function() {
+        function () {
             frappe.call({
                 method: "zkteco_checkins_sync.zkteco_checkin_sync.doctype.zkteco_config.zkteco_config.fix_existing_checkins",
                 freeze: true,
@@ -344,10 +526,10 @@ function fix_checkin_types() {
     );
 }
 
-function remove_duplicates() {
+function remove_duplicates(frm) {
     frappe.confirm(
         __('This will remove duplicate Employee Checkin records (same employee, time, and log type). Continue?'),
-        function() {
+        function () {
             frappe.call({
                 method: "zkteco_checkins_sync.zkteco_checkin_sync.doctype.zkteco_config.zkteco_config.remove_duplicate_checkins",
                 freeze: true,

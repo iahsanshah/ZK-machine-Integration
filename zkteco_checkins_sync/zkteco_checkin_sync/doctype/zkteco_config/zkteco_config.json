@@ -15,7 +15,11 @@
   "column_break_whif",
   "register_api_token",
   "token",
+  "section_break_tkjf",
+  "multi_ip_section",
+  "multi_ip",
   "zkteco_sync_setup_section",
+  "sync_method",
   "seconds",
   "column_break_erpv",
   "check_device_status",
@@ -61,25 +65,34 @@
    "read_only": 1
   },
   {
-   "description": "IP address of the ZKBio Time server ipv4",
+   "description": "Primary IP address of the ZKBio Time server ipv4 (for backward compatibility)",
    "fieldname": "server_ip",
    "fieldtype": "Data",
-   "label": "Server IP",
-   "mandatory_depends_on": "eval: doc.enable_sync === 1;"
+   "label": "Primary Server IP",
+   "mandatory_depends_on": "eval: doc.enable_sync === 1 && !doc.multi_ip.length;"
   },
   {
    "default": "80",
-   "description": "Can be found while installing the ZKBio Time",
+   "description": "Can be found while installing the ZKBio Time (for backward compatibility)",
    "fieldname": "server_port",
    "fieldtype": "Data",
-   "label": "Server Port",
-   "mandatory_depends_on": "eval: doc.enable_sync === 1;"
+   "label": "Primary Server Port",
+   "mandatory_depends_on": "eval: doc.enable_sync === 1 && !doc.multi_ip.length;"
   },
   {
    "depends_on": "eval: doc.enable_sync === 1;",
    "fieldname": "zkteco_sync_setup_section",
    "fieldtype": "Section Break",
    "label": "ZKTeco Sync Setup"
+  },
+  {
+   "default": "Individual",
+   "description": "Choose sync method: Individual (one-by-one) or Batch (all at once)",
+   "fieldname": "sync_method",
+   "fieldtype": "Select",
+   "label": "Sync Method",
+   "options": "Individual\nBatch",
+   "mandatory_depends_on": "eval: doc.enable_sync === 1;"
   },
   {
    "default": "300",
@@ -139,13 +152,31 @@
    "fieldtype": "Int",
    "label": "Total Synced Records",
    "read_only": 1
+  },
+  {
+   "depends_on": "eval: doc.enable_sync === 1;",
+   "fieldname": "section_break_tkjf",
+   "fieldtype": "Section Break"
+  },
+  {
+   "depends_on": "eval: doc.enable_sync === 1;",
+   "fieldname": "multi_ip_section",
+   "fieldtype": "Section Break",
+   "label": "Multiple Server IPs Configuration"
+  },
+  {
+   "fieldname": "multi_ip",
+   "fieldtype": "Table",
+   "label": "Server IPs",
+   "options": "ZKTeco Config IP",
+   "description": "Add multiple server IPs for synchronization. If added, the primary server IP above will be ignored."
   }
  ],
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2025-12-05 23:22:12.239338",
- "modified_by": "umairwali6@gmail.com",
+ "modified": "2026-02-09 12:06:00.270820",
+ "modified_by": "Administrator",
  "module": "ZKTeco Checkin Sync",
  "name": "ZKTeco Config",
  "owner": "Administrator",
@@ -180,7 +211,6 @@
    "write": 1
   }
  ],
- "row_format": "Dynamic",
  "sort_field": "modified",
  "sort_order": "DESC",
  "states": []
